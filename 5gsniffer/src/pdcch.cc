@@ -29,8 +29,79 @@
 #include <numeric>
 #include <execution>
 #include <unordered_map>
+#include <cstdio>
+#include <chrono>
+
+#include "config.h"
+#include "sdr.h"
+
+static FILE* dci_log_fp = nullptr;
+
+static inline void log_dci(uint16_t slot, uint16_t rnti,
+                           uint8_t  mcs,  uint8_t  ndi,
+                           uint32_t tb_bytes)
+{
+    if (!dci_log_fp) {                                 // first time → open & header
+        dci_log_fp = fopen("../5GSnifferLogs.csv", "w");
+        fprintf(dci_log_fp,
+                "timestamp_ms,slot,rnti,mcs,ndi,tb_size\n");
+    }
+    uint64_t ts_ms = std::chrono::duration_cast<
+                       std::chrono::milliseconds>(
+                       std::chrono::system_clock::now()
+                       .time_since_epoch()).count();
+
+    /* single 50-byte write → <0.1 µs on a modern CPU */
+    fprintf(dci_log_fp, "%llu,%u,%u,%u,%u,%u\n",
+            (unsigned long long)ts_ms, slot, rnti, mcs, ndi, tb_bytes);
+    fflush(dci_log_fp);            // keep the file coherent even on crash
+}
+
+extern struct config config;
 
 std::binary_semaphore rnti_list_mutex(1);
+
+// DCI LOGGING HELPERS
+/* ────────── 38.214 Table 5.1.3.1-2 (supports 256-QAM) ────────── */
+struct McsEntry { uint8_t Qm; uint16_t codeRate_x1024; };
+static constexpr std::array<McsEntry, 32> NR_MCS_TABLE = {{
+ /*0*/ {2,120},  {2,193},  {2,308},  {2,449},
+ /*4*/ {2,602},  {2,378},  {2,490},  {2,616},
+ /*8*/ {2,466},  {2,567},  {4,340},  {4,449},
+ /*12*/{4,567},  {4,666},  {4,772},  {4,873},
+ /*16*/{6,449},  {6,567},  {6,666},  {6,772},
+ /*20*/{6,873},  {6,948},  {8,772},  {8,873},
+ /*24*/{8,948},  {8,948},  {8,948},  {8,948},
+ /*28*/{8,948},  {8,948},  {8,948},  {8,948}
+}};
+
+/* very-lightweight TB-size estimator (good for real-time logging) */
+static inline uint32_t
+compute_tb_size_bytes(uint8_t mcs, uint16_t NprimeRE, uint16_t L_RB, uint8_t layers = 1)
+{
+  if (mcs >= NR_MCS_TABLE.size()) return 0;
+  const auto &e = NR_MCS_TABLE[mcs];
+  double R  = e.codeRate_x1024 / 1024.0;
+  uint32_t nInfoBits = static_cast<uint32_t>(NprimeRE) * L_RB * e.Qm * R * layers;
+  nInfoBits = (nInfoBits >> 3) << 3;          /* round down to 8-bit multiple */
+  return nInfoBits >> 3;                      /* → bytes */
+}
+
+// ---------- RIV helper (TS 38.214 §5.1.2.2) ----------
+static inline std::pair<uint16_t,uint16_t>
+DecodeRiv (uint16_t V, uint16_t N)        // returns {RBstart , L_RB}
+{
+  uint16_t q  = V / N;
+  uint16_t r  = V % N;
+  uint16_t Lp = q + 1;                    // preliminary length
+
+  if (r + Lp <= N)                        // first branch
+    return { r, Lp };
+
+  /* second branch */
+  return { static_cast<uint16_t>(N - 1 - r),
+           static_cast<uint16_t>(N - q + 1) };
+}
 
 namespace nr {
   pdcch::pdcch(){
@@ -310,7 +381,6 @@ namespace nr {
     return AL_dci_list;
   }
 
-
   int pdcch::decode_pdcch(symbol& symbol, std::vector<std::complex<float>>& pdcch_symbols, dci dci_, srsran_pdcch_nr_res_t* res, bool rep_opt, int64_t metadata, int symbol_in_chunk)
   {
     bool user_search_space = false;
@@ -442,10 +512,96 @@ namespace nr {
       dci_.set_payload(dci_payload);
       std::string dci_string = dci_msg_bin;
 
-      float sample_time = ((float) metadata )/sample_rate_time;
-      SPDLOG_INFO("Found DCI PDCCH DCI: RNTI = {}, AL = {}, DCI size {}, Time = {}, Samples from start = {}, Slots from samples from start = {} Slot within frame = {}, Symbol within slot = {}, binary dci is {}, correlation is {}",
-      dci_.get_rnti(), dci_.get_found_aggregation_level(), dci_.get_nof_bits(), sample_time + symbol_in_chunk* 0.001, sample_time, symbol_in_chunk, symbol.slot_index, symbol.symbol_index, dci_string, dci_.get_correlation());
+      // --------------------------------------------------------------------------------------------CALCULATE MCS, NDI, RIV, TB size, and PDCCH RBs------------------------------------------------------------------------------------------------------ 
+      // ---------- Extract 5-bit MCS starting at bit x ----------
+      constexpr int MCS_start = 13;                   // 0-based start position (13 → bits 13-17)
+      uint8_t MCS = 0;                        // value to print later
 
+      // convert to 0-based index
+      int bit_idx = MCS_start - 1;
+
+      if (static_cast<int>(dci_string.size()) >= bit_idx + 5) {
+          // grab exactly bits [bit_idx .. bit_idx+4], i.e. 1-based bits [MCS_start .. MCS_start+4]
+          std::string mcs_bits = dci_string.substr(bit_idx, 5);
+          MCS = static_cast<uint8_t>(std::bitset<5>(mcs_bits).to_ulong());
+      } else {
+          SPDLOG_WARN("dci_string too short ({}) to extract MCS bits [{}–{}]", 
+                      dci_string.size(), MCS_start, MCS_start + 4);
+      }
+
+      /* ---- FDRA RIV post-processing ---- */
+      constexpr uint16_t kRivSize = 11;   // bits
+      constexpr uint16_t kBwpSize = 52;   // RBs (N)
+
+      /*  ➜  Skip the first bit (not part of FDRA) and grab the next 11 bits  */
+      std::string rivBits = dci_string.substr (1, kRivSize);
+
+      /*  ➜  Convert binary string → integer V  */
+      uint16_t V = static_cast<uint16_t>(std::bitset<kRivSize>(rivBits).to_ulong());
+
+      /*  ➜  Decode V to RBstart & L_RB  */
+      auto [rbStart, lRb] = DecodeRiv (V, kBwpSize);
+
+      /* ---- TB-size estimation (quick) ---- */
+      constexpr uint16_t NprimeRE_PER_PRB = 108;     // 12 symbols – 3 DMRS  ⇒ 108 RE/PRB
+      uint32_t tb_bytes = compute_tb_size_bytes(MCS, NprimeRE_PER_PRB, lRb, /*layers=*/1);
+
+      /* ---- Print NDI info ---- */
+      constexpr int NDI_start = MCS_start + 5; // 1-based
+      int ndi_idx = NDI_start - 1;             // 0-based
+
+      uint8_t NDI = 0;
+      if ((int)dci_string.size() > ndi_idx) {
+        NDI = (dci_string[ndi_idx] == '1');
+      } else {
+        SPDLOG_WARN("dci_string too short ({}) to extract NDI bit [{}]",
+                    dci_string.size(), NDI_start);
+      }
+
+      // Determine if this is a new transmission (toggle) or a re-transmission (same bit)
+      bool is_new_data = (last_ndi_value_ < 0) || (NDI != last_ndi_value_);
+      // set descriptive string accordingly
+      std::string ndi_str = is_new_data ? "new transmission" : "re-transmission";
+
+      // update our consecutive-NDI counter
+      if (is_new_data) {
+        consecutive_ndi_count_ = 0;
+      } else {
+        ++consecutive_ndi_count_;
+      }
+
+      // remember for next time
+      last_ndi_value_ = NDI;
+
+      //* -----------------------------------PDCCH RBs calculation*---------------------------//
+      // 1) figure out which AL‐index and candidate count to use
+      uint8_t AL = dci_.get_found_aggregation_level();                                 // e.g. 4,8,16…
+      uint8_t agg_idx = static_cast<uint8_t>(std::log2(AL));                           // 0…4
+      uint8_t cand_idx = dci_.get_found_candidate();                                   // the candidate number
+      uint8_t num_cand = coreset_info.get_candidates_search_space().at(agg_idx);       // max candidates for this AL
+
+      // 2) grab the RB list
+      auto rb_list = this->get_rb_candidates(AL, cand_idx, num_cand,
+                                            dci_.get_n_slot(), /*user_search_space=*/false);
+
+      // 3) stringify and log
+      std::ostringstream oss;
+      for (size_t i = 0; i < rb_list.size(); ++i) {
+        oss << rb_list[i];
+        if (i + 1 < rb_list.size()) oss << ",";
+      }
+
+      // Collect the data for the CSV log
+        log_dci(dci_.get_n_slot(),          // slot
+          dci_.get_rnti(),            // RNTI
+          MCS,                        // 5-bit MCS you just parsed
+          NDI,                        // 0/1
+          tb_bytes);                  // quick TB-size estimate
+
+      // Log the DCI information 
+      float sample_time = ((float) metadata )/sample_rate_time;
+      SPDLOG_INFO("Found DCI PDCCH DCI: RNTI = {}, AL = {}, DCI size {}, Time = {}, Samples from start = {}, Slots from samples from start = {} Slot within frame = {}, Symbol within slot = {}, binary dci is {}, correlation is {}, FDRA Assignment: RB Start = {}, L_RB = {}, MCS={}, NDI = {} ({}) , ConsecutiveNDI = {}, TB size = {} bytes",
+      dci_.get_rnti(), dci_.get_found_aggregation_level(), dci_.get_nof_bits(), sample_time + symbol_in_chunk* 0.001, sample_time, symbol_in_chunk, symbol.slot_index, symbol.symbol_index, dci_string, dci_.get_correlation(), rbStart, lRb, MCS, NDI, ndi_str, consecutive_ndi_count_, tb_bytes);
     }
       srsran_pdcch_nr_free(&q);
     return res->crc;
