@@ -119,6 +119,10 @@ namespace nr {
       std::vector<uint16_t> found_RNTI_list;
 
       void write_pdcch_symbol_metadata(uint64_t sample_index, uint16_t scrambling_id, uint8_t aggregation_level, uint8_t candidate_idx, float correlation);
+      // counts how many times in a row we've seen NDI==0
+      int  consecutive_ndi_count_{0};
+      // remembers the last seen NDI bit; -1 means “uninitialized”
+      int8_t last_ndi_value_{-1};
   };
 } // namespace nr
 
