@@ -3,7 +3,7 @@ set(BINARY ${CMAKE_PROJECT_NAME})
 file(GLOB_RECURSE ALL_SOURCES LIST_DIRECTORIES true *.h *.cc)
 
 set(CELL_SEARCH_SOURCES cell_search.cc args_manager.cc)
-set(SNIFFER_SOURCES config.cc main.cc file_sink.cc file_source.cc sdr.cc pss.cc sss.cc common_checks.cc dsp.cc syncer.cc phy.cc sniffer.cc ofdm.cc symbol.cc channel_mapper.cc ssb_mapper.cc worker.cc pbch.cc dmrs.cc pn_sequences.cc flow.cc rotator.cc pdcch.cc dci.cc coreset.cc bandwidth_part.cc shifter.cc flow_pool.cc)
+set(SNIFFER_SOURCES config.cc main.cc file_sink.cc file_source.cc sdr.cc pss.cc sss.cc common_checks.cc dsp.cc syncer.cc phy.cc sniffer.cc ofdm.cc symbol.cc channel_mapper.cc ssb_mapper.cc worker.cc pbch.cc dmrs.cc pn_sequences.cc flow.cc rotator.cc pdcch.cc dci.cc coreset.cc bandwidth_part.cc shifter.cc flow_pool.cc dci_parser.cc dataset_writer.cc)
 
 # Add the executables
 add_executable(5g_sniffer ${SNIFFER_SOURCES})

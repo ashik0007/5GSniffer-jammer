@@ -1,0 +1,25 @@
+[sniffer]
+sample_rate = 23040000
+frequency = 3730080000
+nid_1 = 324 # from MIB
+ssb_numerology = 1
+rf_args = "type=b200"
+
+
+[[pdcch]]
+coreset_id = 0
+subcarrier_offset = -24
+num_prbs = 48
+numerology = 1
+dci_sizes_list = [37,39]
+scrambling_id_start = 324
+scrambling_id_end = 324
+rnti_start = 65535
+rnti_end = 65535
+interleaving_pattern = "interleaved"
+coreset_duration = 1
+coreset_nshift = 1
+AL_corr_thresholds = [1, 1, 0.5, 1, 1]
+num_candidates_per_AL = [0, 0, 1, 0, 0]
+
+

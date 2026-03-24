@@ -1,0 +1,23 @@
+[sniffer]
+sample_rate = 23040000
+# band 78 tdd
+frequency = 3483840000
+ssb_numerology = 1
+nid_1 = 0
+#rf_args = "type=b200,master_clock_rate=23.04e6"
+rf_args = "addr=192.168.40.2"
+
+[[pdcch]]
+coreset_id = 1
+subcarrier_offset = -168
+num_prbs = 48
+numerology = 1
+dci_sizes_list = [38,42]
+scrambling_id_start = 1
+scrambling_id_end = 1
+rnti_start = 17921
+rnti_end = 17950
+interleaving_pattern = "non-interleaved"
+coreset_duration = 2
+AL_corr_thresholds = [1, 0.5, 0.5, 1, 1]
+num_candidates_per_AL = [0, 8, 4, 0, 0]

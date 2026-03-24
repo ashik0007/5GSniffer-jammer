@@ -1,0 +1,45 @@
+[sniffer]
+sample_rate = 23040000
+rf_args = "type=b200,master_clock_rate=23.04e6"
+#serial = "337073B"
+
+# From cell search
+frequency = 625250000 
+
+# From NR-Scope log (extracted via extract_params.py)
+nid_1 = 1 # from Cell Found! (N_id in NR-Scope)
+ssb_numerology = 0 # from MIB scs=15kHz (numerology = log2(scs_kHz / 15))
+
+[[pdcch]] # parameters from the CORESET1 (extracted from nrScopeLog.txt)
+coreset_id = 1 # from controlResourceSetId
+subcarrier_offset = -126 # from Coreset 1 parameter: current offset
+num_prbs = 48 # from frequencyDomainResources (8 ones × 6 PRBs)
+numerology = 0 # from subCarrierSpacing in scs-SpecificCarrierList (15kHz = numerology 0)
+coreset_duration = 2 # from duration in controlResourceSetToAddModList
+interleaving_pattern = "non-interleaved" # from cce-REG-MappingType (blank = non-interleaved)
+num_candidates_per_AL = [0, 8, 4, 0, 0] # from nrofCandidates: AL1=n0, AL2=n8, AL4=n4, AL8=n0, AL16=n0
+AL_corr_thresholds = [1, 0.5, 0.5, 1, 1] # Design choice
+
+scrambling_id_start = 1 # same as nid_1
+scrambling_id_end = 1
+
+# RNTI list for lookup
+rnti_start = 17921
+rnti_end = 17970
+
+# Other PHY-layer info from NR-Scope log
+bwp_dl_num_prbs = 52   # confirmed by RIV decode (f_alloc=0x34 matches N_bwp=52)
+bwp_ul_num_prbs = 52   # assumed symmetric (no contradicting UL evidence)
+dmrs_re_per_prb = 18   # 3 DMRS symbols {2,7,11} × 1 CDM group × 6 RE/PRB
+nof_dl_time_res = 1        # 1 PDSCH TDRA entry → 0-bit field (ceil_log2(1)=0); from pdsch-TimeDomainAllocationList
+nof_ul_time_res = 1        # 1 PUSCH TDRA entry → 0-bit field (ceil_log2(1)=0); from pusch-TimeDomainAllocationList
+harq_ack_codebook = 1      # dynamic → DAI=2 bits in DCI 1_1/0_1; from pdsch-HARQ-ACK-Codebook
+nof_dl_to_ul_ack = 1       # 1 ACK timing entry → 0-bit field; from dl-DataToUL-ACK=[4]
+dci_sizes_list = [35,38] # from dci_type
+# nof_pdsch_symbols = 12   already the default (t_alloc=2:12 confirmed)
+# nof_pusch_symbols = 14   already the default (MappingTypeA full UL slot)
+# nof_layers = 1            already the default
+# xoverhead = 0             already the default
+
+
+

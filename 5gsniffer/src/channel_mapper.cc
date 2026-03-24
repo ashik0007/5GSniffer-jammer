@@ -66,6 +66,20 @@ channel_mapper::channel_mapper(shared_ptr<nr::phy> phy, pdcch_config pdcch_confi
                         pdcch_config.num_candidates_per_AL);
   pdcch.set_coreset_info(coreset_info_);
 
+  // Populate CarrierConfig from TOML for DCI field-width and TBS computation.
+  // Note: carrier_config_ is a static member shared across all pdcch instances.
+  nr::pdcch::carrier_config_.bwp_dl_active_bw  = pdcch_config.bwp_dl_num_prbs;
+  nr::pdcch::carrier_config_.bwp_ul_active_bw  = pdcch_config.bwp_ul_num_prbs;
+  nr::pdcch::carrier_config_.nof_dl_time_res   = pdcch_config.nof_dl_time_res;
+  nr::pdcch::carrier_config_.nof_ul_time_res   = pdcch_config.nof_ul_time_res;
+  nr::pdcch::carrier_config_.harq_ack_codebook = pdcch_config.harq_ack_codebook;
+  nr::pdcch::carrier_config_.nof_dl_to_ul_ack  = pdcch_config.nof_dl_to_ul_ack;
+  nr::pdcch::carrier_config_.nof_pdsch_symbols = pdcch_config.nof_pdsch_symbols;
+  nr::pdcch::carrier_config_.nof_pusch_symbols = pdcch_config.nof_pusch_symbols;
+  nr::pdcch::carrier_config_.dmrs_re_per_prb   = pdcch_config.dmrs_re_per_prb;
+  nr::pdcch::carrier_config_.xoverhead         = pdcch_config.xoverhead;
+  nr::pdcch::carrier_config_.nof_layers        = pdcch_config.nof_layers;
+
   // Initialize RNTI list and DMRS sequences
   pdcch.initialize_RNTI_list();
   pdcch.initialize_dmrs_seq();

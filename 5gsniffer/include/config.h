@@ -57,6 +57,24 @@ typedef struct pdcch_config {
   uint8_t coreset_interleaver_size;
   int64_t sample_rate_time;
   int rnti_list_length;
+
+  // DCI field-width parameters (Bug 1: must match active BWP size, not CORESET size)
+  uint16_t bwp_dl_num_prbs;  ///< Active DL BWP size in PRBs — drives FDRA bit-width
+  uint16_t bwp_ul_num_prbs;  ///< Active UL BWP size in PRBs — drives FDRA bit-width
+
+  // DCI field-width parameters for variable-width fields (parse mismatch fix)
+  uint32_t nof_dl_time_res;    ///< PDSCH TDRA table entry count — drives TDRA bit-width (ceil_log2)
+  uint32_t nof_ul_time_res;    ///< PUSCH TDRA table entry count — drives TDRA bit-width (ceil_log2)
+  uint8_t  harq_ack_codebook;  ///< 0=semi-static (DAI=0 bits in 1_1, 1 bit in 0_1), 1=dynamic (DAI=2 bits)
+  uint32_t nof_dl_to_ul_ack;   ///< dl-DataToUL-ACK list length — drives harq_feedback bit-width (ceil_log2)
+
+  // TBS computation parameters (network-dependent, read from RRC/NR-Scope logs)
+  uint32_t nof_pdsch_symbols;  ///< PDSCH OFDM symbols per slot (TDRA row's L, typically 12 or 14)
+  uint32_t nof_pusch_symbols;  ///< PUSCH OFDM symbols per slot (typically 14)
+  uint32_t dmrs_re_per_prb;    ///< DMRS REs per PRB for DL (PDSCH)
+  uint32_t dmrs_ul_re_per_prb; ///< DMRS REs per PRB for UL (PUSCH) — often differs from DL
+  uint32_t xoverhead;          ///< Overhead REs per PRB from PDSCH-ServingCellConfig (0, 6, 12, or 18)
+  uint32_t nof_layers;         ///< Number of spatial multiplexing layers
 } pdcch_config;
 
 struct config {
@@ -150,6 +168,25 @@ struct config {
         pdcch_cfg.coreset_nshift = pdcch_table["coreset_nshift"].value_or(0);
         pdcch_cfg.coreset_reg_bundle_size = pdcch_table["coreset_reg_bundle_size"].value_or(6);
         pdcch_cfg.coreset_interleaver_size = pdcch_table["coreset_interleaver_size"].value_or(2);
+
+        // DCI field-width: BWP size drives the FDRA bit-width; defaults to num_prbs for backward compat
+        pdcch_cfg.bwp_dl_num_prbs = pdcch_table["bwp_dl_num_prbs"].value_or(pdcch_cfg.num_prbs);
+        pdcch_cfg.bwp_ul_num_prbs = pdcch_table["bwp_ul_num_prbs"].value_or(pdcch_cfg.num_prbs);
+
+        // DCI field-width: variable-width fields (fixes parse mismatch)
+        pdcch_cfg.nof_dl_time_res   = pdcch_table["nof_dl_time_res"].value_or(16);
+        pdcch_cfg.nof_ul_time_res   = pdcch_table["nof_ul_time_res"].value_or(16);
+        pdcch_cfg.harq_ack_codebook = pdcch_table["harq_ack_codebook"].value_or(1);
+        pdcch_cfg.nof_dl_to_ul_ack  = pdcch_table["nof_dl_to_ul_ack"].value_or(8);
+
+        // TBS computation parameters
+        pdcch_cfg.nof_pdsch_symbols = pdcch_table["nof_pdsch_symbols"].value_or(12);
+        pdcch_cfg.nof_pusch_symbols = pdcch_table["nof_pusch_symbols"].value_or(14);
+        pdcch_cfg.dmrs_re_per_prb    = pdcch_table["dmrs_re_per_prb"].value_or(6);
+        pdcch_cfg.dmrs_ul_re_per_prb = pdcch_table["dmrs_ul_re_per_prb"].value_or(pdcch_cfg.dmrs_re_per_prb);
+        pdcch_cfg.xoverhead          = pdcch_table["xoverhead"].value_or(0);
+        pdcch_cfg.nof_layers        = pdcch_table["nof_layers"].value_or(1);
+
         conf.pdcch_configs.push_back(pdcch_cfg);
       } else {
         SPDLOG_ERROR("Unexpected config file format");

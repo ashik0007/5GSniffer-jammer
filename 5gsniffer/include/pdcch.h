@@ -25,11 +25,14 @@
 #include "coreset.h"
 #include "dmrs.h"
 #include "dci.h"
+#include "dci_parser.h"
+#include "dataset_writer.h"
 #include <cmath>
 #include "worker.h"
 #include <semaphore>
 #include <srsran/srsran.h>
 #include "srsran_exports.h"
+#include <memory>
 
 namespace nr {
   class pdcch : public worker {
@@ -113,16 +116,19 @@ namespace nr {
       std::unordered_map<string, std::vector<uint16_t> > data_sc_indices_table;
 
 
+      // DCI dataset extraction (shared across all pdcch instances)
+      static std::shared_ptr<DatasetWriter> dataset_writer_;
+      static HarqStateTracker harq_tracker_;
+      static CarrierConfig carrier_config_;
+      static bool dataset_initialized_;
+      static void init_dataset(const std::string& filepath = "dci_dataset.csv");
+
     private:
       uint16_t RNTI;
       coreset coreset_info;
       std::vector<uint16_t> found_RNTI_list;
 
       void write_pdcch_symbol_metadata(uint64_t sample_index, uint16_t scrambling_id, uint8_t aggregation_level, uint8_t candidate_idx, float correlation);
-      // counts how many times in a row we've seen NDI==0
-      int  consecutive_ndi_count_{0};
-      // remembers the last seen NDI bit; -1 means “uninitialized”
-      int8_t last_ndi_value_{-1};
   };
 } // namespace nr
 
