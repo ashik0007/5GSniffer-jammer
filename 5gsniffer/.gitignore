@@ -1,2 +1,4 @@
 build/
 build_docker/
+CLAUDE.md
+sniffer_run.log
